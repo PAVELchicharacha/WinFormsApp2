@@ -1,6 +1,8 @@
 using ExcelDataReader;
 using Microsoft.EntityFrameworkCore;
+using System.Collections.Generic;
 using System.Data;
+using System.Threading.Tasks;
 using WinFormsApp1;
 
 namespace WinFormsApp2
@@ -10,26 +12,26 @@ namespace WinFormsApp2
         public Form1()
         {
             InitializeComponent();
-            LoadDataFromDB();
+            this.Load += async (sender, e) => await LoadDataFromDBAsync();
         }
 
-        private void ImportData_Click(object sender, EventArgs e)
+        private async void ImportData_Click(object sender, EventArgs e)
         {
-            LoadExcelFile();
+            await LoadExcelFileAsync();
         }
 
-        private void SaveData_Click(object sender, EventArgs e)
+        private async void SaveData_Click(object sender, EventArgs e)
         {
-            SaveChangedData();
-            LoadDataFromDB();
+            await SaveChangedDataAsync();
+            await LoadDataFromDBAsync();
         }
 
-        private void LoadData_Click(object sender, EventArgs e)
+        private async void LoadData_Click(object sender, EventArgs e)
         {
-            LoadDataFromDB();
+            await LoadDataFromDBAsync();
         }
 
-        private void LoadExcelFile()
+        private async Task LoadExcelFileAsync()
         {
             using (OpenFileDialog openFileDialog = new OpenFileDialog())
             {
@@ -40,11 +42,11 @@ namespace WinFormsApp2
                 {
                     try
                     {
-                        var dataTable = ReadExcelFile(openFileDialog.FileName);
+                        var dataTable = await Task.Run(() => ReadExcelFile(openFileDialog.FileName));
 
-                        dataGridView1.DataSource = dataTable;
+                        dataGridView1.Invoke((Action)(() => dataGridView1.DataSource = dataTable));
 
-                        SaveToDatabase(dataTable);
+                        await SaveToDatabaseAsync(dataTable);
 
                         MessageBox.Show("Данные успешно загружены и сохранены в базу данных!",
                             "Успешно", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -74,11 +76,11 @@ namespace WinFormsApp2
             }
         }
 
-        private void SaveToDatabase(DataTable dataTable)
+        private async Task SaveToDatabaseAsync(DataTable dataTable)
         {
-            using (var context = new DataBaseContext())
+            await using (var context = new DataBaseContext())
             {
-                context.Database.EnsureCreated();
+                await context.Database.EnsureCreatedAsync();
 
                 var users = new List<DataBaseModel>();
                 var cardCount = new Dictionary<double, int>();
@@ -112,19 +114,19 @@ namespace WinFormsApp2
                         Turnover = row.IsNull("Turnover") ? 0 : Convert.ToDouble(row["Turnover"]),
                     });
                 }
-                context.Users.AddRange(users);
-                context.SaveChanges();
+                await context.Users.AddRangeAsync(users);
+                await context.SaveChangesAsync();
             }
         }
 
-        private void LoadDataFromDB()
+        private async Task LoadDataFromDBAsync()
         {
             try
             {
-                using (var context = new DataBaseContext())
+                await using (var context = new DataBaseContext())
                 {
-                    var data = context.Users.ToList();
-                    dataGridView1.DataSource = data;
+                    var data = await context.Users.ToListAsync();
+                    dataGridView1.Invoke(() => dataGridView1.DataSource = data);
                 }
             }
             catch (Exception ex)
@@ -132,32 +134,22 @@ namespace WinFormsApp2
                 MessageBox.Show($"Ошибка загрузки: {ex.Message}");
             }
         }
-        private void SaveChangedData()
+        private async Task SaveChangedDataAsync()
         {
-            try
+            await using (var context = new DataBaseContext())
             {
-                using (var context = new DataBaseContext())
-                {
-                    var changedData = (List<DataBaseModel>)dataGridView1.DataSource;
+                var changedData = (List<DataBaseModel>)dataGridView1.DataSource;
+                dataGridView1.Invoke(() => changedData = (List<DataBaseModel>)dataGridView1.DataSource);
 
-                    foreach (var item in changedData)
-                    {
-                        if (item.CardCode == 0)
-                            context.Users.Add(item);
-                        else
-                            context.Entry(item).State = EntityState.Modified;
-                    }
-                    context.SaveChanges();
-                    MessageBox.Show("Данные успешно сохранены!");
+                foreach (var item in changedData)
+                {
+                    if (item.CardCode == 0)
+                        context.Users.Add(item);
+                    else
+                        context.Entry(item).State = EntityState.Modified;
                 }
-            }
-            catch (DbUpdateException ex)
-            {
-                MessageBox.Show($"Ошибка БД: {ex.InnerException?.Message}");
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Ошибка: {ex.Message}");
+                await context.SaveChangesAsync();
+                MessageBox.Show("Данные успешно сохранены!");
             }
         }
     }
